@@ -12,10 +12,13 @@
 #include "MatC.h"
 
 // configurable variables
-#define FILE_NAME "satpos_meas.txt"
-#define SAVE_NAME "resultkf.txt"
+#define FILE_NAME "satpos_meas4.txt"
+#define SAVE_NAME "resultls.txt"
+#define ANAL_NAME "ana.txt"
+#define LOG_NAME  "log.txt"
+#define OBSA_NAME "obs_sta.txt"
 #define SAMPLE_RATE 1 // Hz
-#define METHOD "KF"
+#define METHOD "LS"
 
 #define LS_MAX_ITER 20
 #define LS_CONV_THRES 0.0001 // m
@@ -30,9 +33,62 @@ int satellite_amount = 0;
 
 // saving file
 FILE * sf = fopen(SAVE_NAME, "w");
+FILE * LOG = fopen(LOG_NAME, "w");
+FILE * af = fopen(ANAL_NAME, "w");
+FILE * of = fopen(OBSA_NAME, "w");
 
 GNSSEKF ekf = EKFCreate(1.0 / SAMPLE_RATE);
 
+double lambda = C / FREQ1;
+
+int ana_prn = 15;
+void XYZ2BLH(double * XYZ, double * BLH)
+{
+	const static double a = 6378137.0;
+	const static double F = 1.0 / 298.257223563;
+	double e2, Z, dZ, ZdZ, r, sinb, N, x2y2;
+	int iter;
+	iter = 0;
+	r = 0.0;
+	N = 0.0;
+	sinb = 0.0;
+	e2 = 2 * F - F * F;
+	x2y2 = XYZ[0] * XYZ[0] + XYZ[1] * XYZ[1];
+	dZ = e2 * XYZ[2];
+	do
+	{
+		Z = dZ;
+		ZdZ = Z + XYZ[2];
+		r = x2y2 + ZdZ*ZdZ;
+		sinb = ZdZ / sqrt(r);
+		N = a / sqrt(1 - e2*sinb*sinb);
+		dZ = N * e2 * sinb;
+		iter = iter + 1;
+	} while ((iter <= 10) && (fabs(dZ - Z) > 1E-8));
+	BLH[0] = atan2(XYZ[1], XYZ[0]);
+	BLH[1] = atan2(ZdZ, sqrt(x2y2));
+	BLH[2] = sqrt(x2y2 + ZdZ*ZdZ) - N;
+}
+bool anal()
+{
+	for (int i = 0; i < satellite_amount; i++)
+	{
+		if (sats[i].prn == ana_prn) {
+			double BLH[3];
+			XYZ2BLH(current_solution, BLH);
+			satellite & ref = sats[i];
+			//if(sats[i].)
+			double range = ref.pseudorange - current_solution[3] - Hopfield(BLH[i], ref.elevation);
+			double ambi1 = ref.carrier_phase - range / lambda;
+			double e_distance = distance(current_solution, ref.location, 3);
+			double error_p = range - e_distance;
+			double error_l = (ref.carrier_phase - round(ambi1)) * lambda - e_distance;
+			fprintf(af, "G%2d %7lf  %12.3lf %12.3lf %13d %16.3lf %12.3lf %12.3lf\n",
+				ref.prn, current_time, range, ref.carrier_phase, (int)round(ambi1), ambi1, error_p, error_l);
+		}
+	}
+	return true;
+}
 bool solve()
 {
 	if (strcmp(METHOD, "LS") == 0)
@@ -81,6 +137,11 @@ bool solve()
 
 			if (distance(last_solution, current_solution, 3) <= LS_CONV_THRES) {
 				// job done
+				fprintf(LOG, "iter: %d, ", i + 1);
+				fprintf(LOG, "SPP: %14.3lf, %14.3lf, %14.3lf, %7.3lf, V: ", current_solution[0], current_solution[1], current_solution[2], current_solution[3]);
+				for (int i = 0; i < satellite_amount; i++)
+					fprintf(LOG, "%6.2lf ", V->data[i][0]);
+				
 				break;
 			}
 		}
@@ -124,10 +185,9 @@ int main()
 	if(!is_valid_time(current_time)){
 		return INVALID;
 	}
-
+	fprintf(LOG, "%7.1lf    ", current_time);
 	while (!feof(fp))
 	{
-		int prn = INVALID;
 		double time = INVALID;
 
 		satellite & sat = sats[satellite_amount];
@@ -146,13 +206,33 @@ int main()
 			return INVALID;
 		}
 
+		fprintf(LOG, "G%2d:%d, ", sat.prn, (int)round(sat.elevation * 180.0 / M_PI / 10));
+	
 		if (current_time != time)
 		{
-			solve();
+			fprintf(of, "%d\n", satellite_amount);
+			for(int i = 0; i < 14 - satellite_amount;i++)
+				fprintf(LOG, "       ");
+			fprintf(LOG, "n: %3d, ", satellite_amount);
+			if (satellite_amount >= 4)
+			{
+				solve();
+				anal();
+			}
+			fprintf(LOG, "\n");
+			
 			satellite_amount = 0;
 			current_time = time;
+			fprintf(LOG, "%7.1lf    ", current_time);
+
+
 		}
 	}
+	for (int i = 0; i < 14 - satellite_amount; i++)
+		fprintf(LOG, "       ");
+	fprintf(LOG, "n: %3d, ", satellite_amount);
+	solve();
+	fprintf(LOG, "\n");
 
 	_fcloseall();
 }
