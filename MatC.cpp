@@ -43,10 +43,10 @@ Matrix * malloc_mat(int rows, int cols)
 	tot->cols = cols;
 	return tot;
 }
-Matrix * eyes(int dim)
+Matrix * eyes(int dim, double value)
 {
 	Matrix * tot = malloc_mat(dim, dim);
-	for (int i = 0;i < dim;i++)tot->data[i][i] = 1;
+	for (int i = 0;i < dim;i++)tot->data[i][i] = value;
 	return tot;
 }
 void mat_sum(Matrix * M1, Matrix * M2)
@@ -278,7 +278,8 @@ void LMS(Matrix * Z, Matrix * H, Matrix * D, Matrix *& X, Matrix *& S, Matrix *&
 	mat_multiply(vt, Dinv, vts);
 	mat_multiply(vts, V, theta);
 	double tt = 1.0 / pow(theta->data[0][0] / (Z->rows - X->rows), 2);
-	mat_multiply(temp3, tt, S);
+	S = temp3;
+	//mat_multiply(temp3, tt, S);
 
 	//mat_save(Z, "Z.txt");
 	//mat_save(H, "H.txt");
@@ -290,7 +291,7 @@ void LMS(Matrix * Z, Matrix * H, Matrix * D, Matrix *& X, Matrix *& S, Matrix *&
 	free_mat(theta);
 	free_mat(temp6);free_mat(I);free_mat(temp7);
 	free_mat(Ht);free_mat(Dinv);free_mat(temp1);
-	free_mat(temp2);free_mat(temp3);free_mat(temp4);
+	free_mat(temp2);/*free_mat(temp3)*/;free_mat(temp4);
 	free_mat(temp5);
 }
 void mat_resize(Matrix * m, int n_rows, int n_cols, Matrix *& tot)

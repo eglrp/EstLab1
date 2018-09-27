@@ -2,6 +2,7 @@
 #pragma once
 #include "MatC.h"
 
+
 struct GNSSEKFV1
 {
 	Matrix * X;//X Y Z T
@@ -32,3 +33,4 @@ void EKFV1Process(
 	double ** satellites_position,
 	int sat_num
 );
+

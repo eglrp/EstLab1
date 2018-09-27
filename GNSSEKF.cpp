@@ -8,6 +8,22 @@ void EKF_FetchObservation(GNSSEKF *& ekf, double ** satellites_position, int sat
 	double * distance,
 	double * distance_err);
 void EKF_Reset(GNSSEKF *& ekf);
+void EKF_FetchResiduals(GNSSEKF *& ekf, double ** satellites_position, int sat_num)
+{
+	double S[MAX_SATELLITE_NUMBER];
+	// 算个残差如何？
+	for (int i = 0; i < sat_num; i++)
+	{
+		S[i] = sqrt(
+			pow(ekf->X->data[0][0] - satellites_position[i][0], 2) +
+			pow(ekf->X->data[3][0] - satellites_position[i][1], 2) +
+			pow(ekf->X->data[6][0] - satellites_position[i][2], 2)
+		) + ekf->X->data[9][0];
+		ekf->Zp->data[i][0] = S[i];
+	}
+
+	mat_minus(ekf->Zp, ekf->Z, ekf->V);
+}
 //FILE * fp6 = NULL;
 
 GNSSEKF EKFCreate(double DeltaT)
@@ -56,7 +72,7 @@ GNSSEKF EKFCreate(double DeltaT)
 	tot.T->data[9][3] = ttd2;
 	tot.T->data[10][3] = DeltaT;
 
-	tot.De = eyes(4);
+	tot.De = eyes(4, KF_SYS_NOI);
 
 	mat_trans(tot.F, tot.Ft);
 	mat_trans(tot.T, tot.Tt);
@@ -72,9 +88,11 @@ void EKFProcess(
 	double ** satellites_position,
 	int sat_num)
 {
+	free_mat(ekf->V);
 	EKF_Predict(ekf);
 	EKF_FetchObservation(ekf, satellites_position, sat_num, distance, distance_err);
 	EKF_Execute(ekf);
+	EKF_FetchResiduals(ekf, satellites_position, sat_num);
 	/*fprintf(fp6, "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
 		ekf->X->data[0][0],
 		ekf->X->data[1][0],
@@ -137,7 +155,7 @@ void EKF_Predict(GNSSEKF *& ekf)
 }
 void EKF_Reset(GNSSEKF *& ekf)
 {
-	free_mat(ekf->V);
+	
 	free_mat(ekf->K);
 }
 void EKF_FetchObservation(GNSSEKF *& ekf, double ** satellites_position, int sat_num,

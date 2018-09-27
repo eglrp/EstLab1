@@ -5,6 +5,10 @@
 #define MAX_SATELLITE_NUMBER 32
 #define FREQ1       1.57542E9           /* L1  frequency (Hz) */
 #define C           299792458.0         /* speed of light (m/s) */
+#define KF_SYS_NOI 0.2
+#define CXVA_NAME "cxva.txt"
+// 20 10 5 3 1 0.5 0.1
+
 struct satellite {
 	int prn;
 	double location[3];

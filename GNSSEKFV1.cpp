@@ -4,15 +4,34 @@
 #include "CmnDef.h"
 #include "GNSSEKFV1.h"
 #include "MatC.h"
+
+
+
 void EKFV1_Predict(GNSSEKFV1 *& ekf);
 void EKFV1_Execute(GNSSEKFV1 *& ekf);
+void EKFV1_FetchResiduals(GNSSEKFV1 *& ekf, double ** satellites_position, int sat_num)
+{
+	double S[MAX_SATELLITE_NUMBER];
+	// 算个残差如何？
+	for (int i = 0; i < sat_num; i++)
+	{
+		S[i] = sqrt(
+			pow(ekf->X->data[0][0] - satellites_position[i][0], 2) +
+			pow(ekf->X->data[1][0] - satellites_position[i][1], 2) +
+			pow(ekf->X->data[2][0] - satellites_position[i][2], 2)
+		) + ekf->X->data[3][0];
+		ekf->Zp->data[i][0] = S[i];
+	}
+
+	mat_minus(ekf->Zp, ekf->Z, ekf->V);
+}
 void EKFV1_FetchObservation(GNSSEKFV1 *& ekf, double ** satellites_position, int sat_num,
 	double * distance,
 	double * distance_err);
 void EKFV1_Reset(GNSSEKFV1 *& ekf);
 //FILE * fp6 = NULL;
 
-GNSSEKFV1 EKFCreate(double DeltaT)
+GNSSEKFV1 EKFV1Create(double DeltaT)
 {
 	double ttd2 = 0.5 * DeltaT * DeltaT;
 	double tttd6 = DeltaT * DeltaT * DeltaT / 6;
@@ -41,7 +60,7 @@ GNSSEKFV1 EKFCreate(double DeltaT)
 		tot.T->data[i][i] = DeltaT;
 	}
 
-	tot.De = eyes(4);
+	tot.De = eyes(4, KF_SYS_NOI);
 
 	mat_trans(tot.F, tot.Ft);
 	mat_trans(tot.T, tot.Tt);
@@ -57,9 +76,11 @@ void EKFV1Process(
 	double ** satellites_position,
 	int sat_num)
 {
+	free_mat(ekf->V);
 	EKFV1_Predict(ekf);
 	EKFV1_FetchObservation(ekf, satellites_position, sat_num, distance, distance_err);
 	EKFV1_Execute(ekf);
+	EKFV1_FetchResiduals(ekf, satellites_position, sat_num);
 	/*fprintf(fp6, "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
 	ekf->X->data[0][0],
 	ekf->X->data[1][0],
@@ -103,6 +124,8 @@ void EKFV1_Execute(GNSSEKFV1 *& ekf)
 	mat_minus(I, temp2, temp3);
 	mat_multiply(temp3, ekf->Dp, ekf->Dx);
 
+
+
 	free_mat(temp1); free_mat(temp2); free_mat(temp3);
 }
 void EKFV1_Predict(GNSSEKFV1 *& ekf)
@@ -122,7 +145,7 @@ void EKFV1_Predict(GNSSEKFV1 *& ekf)
 }
 void EKFV1_Reset(GNSSEKFV1 *& ekf)
 {
-	free_mat(ekf->V);
+	//free_mat(ekf->V);
 	free_mat(ekf->K);
 }
 void EKFV1_FetchObservation(GNSSEKFV1 *& ekf, double ** satellites_position, int sat_num,

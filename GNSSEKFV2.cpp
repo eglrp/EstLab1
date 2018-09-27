@@ -9,6 +9,22 @@ void EKFV2_FetchObservation(GNSSEKFV2 *& ekf, double ** satellites_position, int
 	double * distance,
 	double * distance_err);
 void EKFV2_Reset(GNSSEKFV2 *& ekf);
+void EKFV2_FetchResiduals(GNSSEKFV2 *& ekf, double ** satellites_position, int sat_num)
+{
+	double S[MAX_SATELLITE_NUMBER];
+	// 算个残差如何？
+	for (int i = 0; i < sat_num; i++)
+	{
+		S[i] = sqrt(
+			pow(ekf->X->data[0][0] - satellites_position[i][0], 2) +
+			pow(ekf->X->data[2][0] - satellites_position[i][1], 2) +
+			pow(ekf->X->data[4][0] - satellites_position[i][2], 2)
+		) + ekf->X->data[6][0];
+		ekf->Zp->data[i][0] = S[i];
+	}
+
+	mat_minus(ekf->Zp, ekf->Z, ekf->V);
+}
 //FILE * fp6 = NULL;
 
 GNSSEKFV2 EKFV2Create(double DeltaT)
@@ -33,11 +49,10 @@ GNSSEKFV2 EKFV2Create(double DeltaT)
 	tot.F = malloc_mat(8, 8);
 	for (int i = 0; i < 3; i++)
 	{
-		int offset = i * 3;
+		int offset = i * 2;
 		tot.F->data[offset][offset] = 1;
 		tot.F->data[offset][offset + 1] = DeltaT;
 		tot.F->data[offset + 1][offset + 1] = 1;
-		tot.F->data[offset + 1][offset + 2] = DeltaT;
 	}
 	tot.F->data[6][6] = 1;
 	tot.F->data[6][7] = DeltaT;
@@ -47,13 +62,13 @@ GNSSEKFV2 EKFV2Create(double DeltaT)
 	tot.T = malloc_mat(8, 4);
 	for (int i = 0; i < 3; i++)
 	{
-		tot.T->data[3 * i][i] = ttd2;
-		tot.T->data[3 * i + 1][i] = DeltaT;
+		tot.T->data[2 * i][i] = ttd2;
+		tot.T->data[2 * i + 1][i] = DeltaT;
 	}
 	tot.T->data[6][3] = ttd2;
 	tot.T->data[7][3] = DeltaT;
 
-	tot.De = eyes(4);
+	tot.De = eyes(4, KF_SYS_NOI);
 
 	mat_trans(tot.F, tot.Ft);
 	mat_trans(tot.T, tot.Tt);
@@ -69,9 +84,11 @@ void EKFV2Process(
 	double ** satellites_position,
 	int sat_num)
 {
+	free_mat(ekf->V);
 	EKFV2_Predict(ekf);
 	EKFV2_FetchObservation(ekf, satellites_position, sat_num, distance, distance_err);
 	EKFV2_Execute(ekf);
+	EKFV2_FetchResiduals(ekf, satellites_position, sat_num);
 	/*fprintf(fp6, "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
 	ekf->X->data[0][0],
 	ekf->X->data[1][0],
@@ -115,6 +132,7 @@ void EKFV2_Execute(GNSSEKFV2 *& ekf)
 	mat_minus(I, temp2, temp3);
 	mat_multiply(temp3, ekf->Dp, ekf->Dx);
 
+
 	free_mat(temp1); free_mat(temp2); free_mat(temp3);
 }
 void EKFV2_Predict(GNSSEKFV2 *& ekf)
@@ -134,7 +152,7 @@ void EKFV2_Predict(GNSSEKFV2 *& ekf)
 }
 void EKFV2_Reset(GNSSEKFV2 *& ekf)
 {
-	free_mat(ekf->V);
+	//free_mat(ekf->V);
 	free_mat(ekf->K);
 }
 void EKFV2_FetchObservation(GNSSEKFV2 *& ekf, double ** satellites_position, int sat_num,
