@@ -1,9 +1,7 @@
 ﻿#pragma warning(disable : 4996)
 // time counting lib
 #include <windows.h>
-// there are so many things can do with the data.
-// 1. observe and compare the Cex from KF & LS
-// 2. do MV and RR
+
 
 #include <stdio.h>
 #include <string.h>
@@ -31,7 +29,7 @@
 #define METHOD "LS"
 
 #define LS_MAX_ITER 10
-#define LS_CONV_THRES 0.00001 // m
+#define LS_CONV_THRES 0.000001 // m
 
 
 
@@ -63,6 +61,19 @@ GNSSEKFV2 ekfv2;
 double lambda = C / FREQ1;
 
 int ana_prn = 15;
+
+// To get the rotation matrix from XYZ to ENU.
+void get_matrix_T(Matrix *& E, double * BLH)
+{
+	E = malloc_mat(3, 3);
+
+	double sinp = sin(BLH[0]), cosp = cos(BLH[0]), sinl = sin(BLH[1]), cosl = cos(BLH[1]);
+	E->data[0][0] = -sinl;       E->data[0][1] = cosl;        E->data[0][2] = 0.0;
+	E->data[1][0] = -sinp*cosl;  E->data[1][1] = -sinp*sinl;  E->data[1][2] = cosp;
+	E->data[2][0] = cosp*cosl;   E->data[2][1] = cosp*sinl;   E->data[2][2] = sinp;
+
+}
+
 void XYZ2BLH(double * XYZ, double * BLH)
 {
 	const static double a = 6378137.0;
@@ -159,16 +170,39 @@ bool solve(const char * method)
 				current_solution[j] += X->data[j][0];
 
 			if (distance(last_solution, current_solution, 3) <= LS_CONV_THRES) {
+				Matrix * Ht = NULL, * HtH = NULL, * Q = NULL;
+				mat_trans(H, Ht);
+				mat_multiply(Ht, H, HtH);
+				mat_inv(HtH, Q);
 				// job done
-				double x2 = Sig->data[0][0] * Sig->data[0][0];
-				double y2 = Sig->data[1][1] * Sig->data[1][1];
-				double z2 = Sig->data[2][2] * Sig->data[2][2];
-				double t2 = Sig->data[3][3] * Sig->data[3][3];
+				double x2 = Q->data[0][0];
+				double y2 = Q->data[1][1];
+				double z2 = Q->data[2][2];
+				double t2 = Q->data[3][3];
 				//double PDOP = sqrt(x2 + y2 + z2);
 				double TDOP = sqrt(t2);
 				double GDOP = sqrt(x2 + y2 + z2 + t2);
-				double HDOP = sqrt(x2 + y2);
-				double VDOP = sqrt(z2);
+
+				double blh[3];
+				//double t2 = Q->data[3][3] * Q->data[3][3];
+
+				Matrix * T = NULL, *Tt = NULL, *temp1 = NULL, *Qn = NULL;
+				Q->cols = 3;
+				Q->rows = 3;
+
+				XYZ2BLH(current_solution, blh);
+				get_matrix_T(T, blh);
+
+				mat_inv(T, Tt);
+				mat_multiply(T, Q, temp1);
+				mat_multiply(temp1, Tt, Qn);
+
+				double e2 = Qn->data[0][0];
+				double n2 = Qn->data[1][1];
+				double u2 = Qn->data[2][2];
+
+				double HDOP = sqrt(e2 + n2);
+				double VDOP = sqrt(u2);
 
 				fprintf(df, "%lf %lf %lf %lf\n", TDOP, GDOP, HDOP, VDOP);
 
@@ -273,7 +307,7 @@ bool solve(const char * method)
 		for (int i = 0; i < satellite_amount; i++)
 		{
 			distance[i] = sats[i].pseudorange;
-			distance_var[i] = OBS_Sig0 * OBS_Sig0 / sin(sats[i].elevation);
+			distance_var[i] = OBS_Sig0 * OBS_Sig0 / sin(sats[i].elevation) / sin(sats[i].elevation);
 
 			sat_loc[i] = (double*)alloca(3 * sizeof(double));
 			memcpy(sat_loc[i], sats[i].location, sizeof(double) * 3);
